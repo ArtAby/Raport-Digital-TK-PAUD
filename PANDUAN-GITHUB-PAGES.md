@@ -12,11 +12,18 @@ Hasil akhirnya: satu alamat seperti `https://namaakun.github.io/rapor-paud-demo/
 4. Buka **Settings → Pages**. Pada **Build and deployment**, pilih **Deploy from a branch**, branch **main**, folder **/ (root)**, lalu **Save**.
 5. Tunggu 1 sampai 2 menit, segarkan halaman Pages itu, dan alamat situsnya akan muncul di bagian atas. Bagikan alamat tersebut.
 
+## Jika pilihan branch `main` tidak muncul
+
+- Repo masih kosong: selesaikan langkah 3 (commit file) dulu, baru buka Settings → Pages.
+- Repo masih Private: ubah ke Public di **Settings → General → Danger Zone → Change visibility**.
+- Nama branch bukan `main`: cek di tab **Code**, lalu pilih nama yang sama di Pages.
+
 ## Yang perlu diketahui saat mendemokan
 
 - **Tidak perlu login sungguhan.** Ada dua tombol masuk: Admin (melihat semua kelas dan menu Admin) dan Guru (hanya melihat kelasnya sendiri).
+- **Buku Induk Anak:** klik nama siswa di daftar kelas untuk membuka halaman biodata (data anak, orang tua, tempat tinggal, foto) dengan tombol Tambah, Edit, Hapus, dan Tutup. Tab *Data per tahun* menampilkan riwayat rapor. Coba Edit lalu Pilih foto untuk menunjukkan unggah foto.
 - **Data contoh fiktif** (10 siswa, 2 kelas, 2 rapor untuk Alya). Rapor Alya semester ini sudah terisi lengkap, cocok untuk ditunjukkan di layar *Cetak*.
 - **Data tersimpan di peramban masing-masing.** Perubahan satu guru tidak terlihat guru lain, dan hilang jika data situs dibersihkan. Tombol **Reset data demo** di bagian atas mengembalikan ke kondisi awal.
 - **Narasi "AI" di demo hanya templat sederhana**, bukan Claude. Aplikasi akan menampilkan pemberitahuan itu setiap kali tombolnya ditekan. Hasil yang sebenarnya jauh lebih alami, jadi sebaiknya sampaikan ini saat presentasi.
-- **Jangan memasukkan data anak sungguhan** ke demo. Demo tidak punya login atau perlindungan akun.
+- **Jangan memasukkan data anak sungguhan** (nama, NIK, foto) ke demo. Demo tidak punya login atau perlindungan akun.
 - Untuk mencoba tanpa GitHub, cukup klik dua kali `index.html` di komputer.

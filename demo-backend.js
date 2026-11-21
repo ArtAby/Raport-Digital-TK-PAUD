@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  const KEY = 'raporpaud-demo-v1';
+  const KEY = 'raporpaud-demo-v2';
   const SKEY = 'raporpaud-demo-session';
 
   const uuid = () =>
@@ -28,22 +28,37 @@
   // ---------------------------------------------------------------
   function seed() {
     const admin = uuid(), guru = uuid(), kB = uuid(), kA = uuid();
-    const mk = (kelas_id, nama, panggilan, jk, lahir, extra) => ({
-      id: uuid(), kelas_id, nama, panggilan, jenis_kelamin: jk, tempat_lahir: 'Surakarta', tanggal_lahir: lahir,
-      nis: null, nisn: null, nama_ortu: null, alamat: null, aktif: true, created_at: nowISO(), ...(extra || {}),
-    });
-    const alya = mk(kB, 'Alya Putri Rahmawati', 'Alya', 'P', '2020-09-14', { nis: '2025001', nama_ortu: 'Ibu Rina Rahmawati' });
+    // Semua data siswa di bawah ini fiktif (NIK, HP, dan alamat hanya contoh).
+    let n = 0;
+    const mk = (kelas_id, angkatan, nama, panggilan, jk, lahir, ayah, ibu, pAyah, pIbu, extra) => {
+      n += 1;
+      const nn = String(n).padStart(2, '0');
+      return {
+        id: uuid(), kelas_id,
+        nipd: (angkatan.slice(0, 4)) + String(n).padStart(3, '0'),
+        nama, panggilan, jenis_kelamin: jk, angkatan,
+        nik: '3372' + String(n).padStart(12, '0'),
+        nisn: null, agama: 'Islam', tempat_lahir: 'Surakarta', tanggal_lahir: lahir,
+        anak_ke: 1, dari_bersaudara: 2, foto: null,
+        nama_ayah: ayah, nama_ibu: ibu, pekerjaan_ayah: pAyah, pekerjaan_ibu: pIbu,
+        hp_ortu: '08120000' + nn + '00',
+        alamat: 'Jl. Melati No. ' + (n + 3) + ', Kel. Contoh',
+        kecamatan: 'Banjarsari', jenis_kota: 'Kota', kota: 'Surakarta', provinsi: 'Jawa Tengah', kode_pos: '57139',
+        aktif: true, created_at: nowISO(), ...(extra || {}),
+      };
+    };
+    const alya = mk(kB, '2025/2026', 'Alya Putri Rahmawati', 'Alya', 'P', '2020-09-14', 'Rahmat Hidayat, S.H.', 'Rina Wulandari, S.Pd.', 'Wiraswasta', 'Guru', { anak_ke: 2, dari_bersaudara: 3 });
     const siswa = [
       alya,
-      mk(kB, 'Bima Aditya Pratama', 'Bima', 'L', '2020-11-02', { nis: '2025002' }),
-      mk(kB, 'Citra Lestari', 'Citra', 'P', '2021-01-21', { nis: '2025003' }),
-      mk(kB, 'Dafa Rizky Maulana', 'Dafa', 'L', '2020-07-30', { nis: '2025004' }),
-      mk(kB, 'Elok Safira Nuraini', 'Elok', 'P', '2021-03-09', { nis: '2025005' }),
-      mk(kB, 'Farel Ramadhan', 'Farel', 'L', '2020-12-18', { nis: '2025006' }),
-      mk(kA, 'Gisel Anindya Putri', 'Gisel', 'P', '2021-10-05', { nis: '2026001' }),
-      mk(kA, 'Hanif Fadhilah', 'Hanif', 'L', '2021-08-27', { nis: '2026002' }),
-      mk(kA, 'Ines Kirana', 'Ines', 'P', '2022-02-11', { nis: '2026003' }),
-      mk(kA, 'Jaya Saputra', 'Jaya', 'L', '2022-04-16', { nis: '2026004' }),
+      mk(kB, '2025/2026', 'Bima Aditya Pratama', 'Bima', 'L', '2020-11-02', 'Agus Pratama', 'Sri Handayani', 'Karyawan swasta', 'Ibu rumah tangga'),
+      mk(kB, '2025/2026', 'Citra Lestari', 'Citra', 'P', '2021-01-21', 'Dedi Setiawan', 'Maya Anggraini', 'Pedagang', 'Pedagang', { agama: 'Kristen' }),
+      mk(kB, '2025/2026', 'Dafa Rizky Maulana', 'Dafa', 'L', '2020-07-30', 'Eko Prasetyo', 'Lilis Suryani', 'PNS', 'Perawat'),
+      mk(kB, '2025/2026', 'Elok Safira Nuraini', 'Elok', 'P', '2021-03-09', 'Fajar Nugroho', 'Nur Aini', 'Petani', 'Ibu rumah tangga'),
+      mk(kB, '2025/2026', 'Farel Ramadhan', 'Farel', 'L', '2020-12-18', 'Hari Wibowo', 'Yuni Astuti', 'Sopir', 'Penjahit'),
+      mk(kA, '2026/2027', 'Gisel Anindya Putri', 'Gisel', 'P', '2021-10-05', 'Imam Santoso', 'Dewi Lestari', 'Dokter', 'Apoteker', { agama: 'Katolik' }),
+      mk(kA, '2026/2027', 'Hanif Fadhilah', 'Hanif', 'L', '2021-08-27', 'Joko Susilo', 'Fitri Handayani', 'Wiraswasta', 'Guru'),
+      mk(kA, '2026/2027', 'Ines Kirana', 'Ines', 'P', '2022-02-11', 'Kadek Arta', 'Ayu Wulandari', 'Karyawan swasta', 'Karyawan swasta', { agama: 'Hindu' }),
+      mk(kA, '2026/2027', 'Jaya Saputra', 'Jaya', 'L', '2022-04-16', 'Lukman Hakim', 'Mega Puspita', 'Teknisi', 'Ibu rumah tangga'),
     ];
 
     const rapor = [
@@ -318,6 +333,8 @@
       }
       const ids = new Set(hit.map((r) => r.id));
       db[q.table] = rows.filter((r) => !ids.has(r.id));
+      // meniru "on delete cascade": rapor ikut terhapus bersama siswanya
+      if (q.table === 'siswa') db.rapor = db.rapor.filter((r) => !ids.has(r.siswa_id));
       saveDB();
       return { data: null, error: null };
     }

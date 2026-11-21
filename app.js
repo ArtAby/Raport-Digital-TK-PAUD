@@ -203,7 +203,8 @@
       if (!page) await viewBeranda(my);
       else if (page === 'kelas') await viewKelas(my, a);
       else if (page === 'rapor') await viewRapor(my, a, b, c);
-      else if (page === 'riwayat') await viewRiwayat(my, a);
+      else if (page === 'siswa') await viewSiswa(my, a, b);
+      else if (page === 'riwayat') await viewSiswa(my, a, 'tahun');
       else if (page === 'cetak') await viewCetak(my, a, b, c);
       else if (page === 'admin' && isAdmin()) await viewAdmin(my);
       else location.hash = '#/';
@@ -409,7 +410,6 @@
       if (e3) throw e3;
       raporMap = Object.fromEntries(rap.map((r) => [r.siswa_id, r]));
     }
-    const { data: semuaKelas } = await sb.from('kelas').select('id,nama').order('nama');
     if (my !== state.token) return;
 
     const tampil = siswa.filter((s) => s.aktif || state.tampilNonaktif);
@@ -422,7 +422,7 @@
         <div><h2>${kelas.nama}</h2><div class="muted">${kelas.kelompok || ''} &middot; ${jmlAktif} siswa aktif &middot; ${jmlFinal} rapor final pada periode ini</div></div>
         <div class="actions">
           <button class="btn" id="btnImpor">Impor nama</button>
-          <button class="btn primary" id="btnTambah">Tambah siswa</button>
+          <a class="btn primary" href="#/siswa/baru/${kelas.id}">Tambah siswa</a>
         </div>
       </div>
 
@@ -445,14 +445,13 @@
               const st = r ? r.status : 'none';
               return html`<tr>
                 <td>${i + 1}</td>
-                <td><strong>${s.nama}</strong>${s.aktif ? '' : html` <span class="pill nonaktif">nonaktif</span>`}</td>
+                <td><a class="nama-link" href="#/siswa/${s.id}"><strong>${s.nama}</strong></a>${s.aktif ? '' : html` <span class="pill nonaktif">nonaktif</span>`}</td>
                 <td>${s.jenis_kelamin || '-'}</td>
                 <td>${usiaTeks(s.tanggal_lahir) || '-'}</td>
                 <td><span class="pill ${st}">${st === 'none' ? 'Belum dibuat' : st === 'draft' ? 'Draf' : 'Final'}</span></td>
                 <td class="actions">
                   <a class="btn small primary" href="${rhref('rapor', s.id, ta, sem)}">${r ? 'Buka rapor' : 'Isi rapor'}</a>
-                  <a class="btn small" href="${rhref('riwayat', s.id)}">Riwayat</a>
-                  <button class="btn small" data-edit="${s.id}">Ubah</button>
+                  <a class="btn small" href="#/siswa/${s.id}">Biodata</a>
                 </td>
               </tr>`;
             })}
@@ -471,66 +470,384 @@
       state.tampilNonaktif = e.target.checked;
       route();
     };
-    document.getElementById('btnTambah').onclick = () => dialogSiswa(semuaKelas, null, kelas.id, route);
     document.getElementById('btnImpor').onclick = () => dialogImpor(kelas, route);
-    document.querySelectorAll('[data-edit]').forEach((b) => {
-      b.onclick = () => dialogSiswa(semuaKelas, siswa.find((s) => s.id === b.dataset.edit), kelas.id, route);
+  }
+
+  // ===================================================================
+  // Buku Induk Anak: biodata siswa + riwayat rapor per tahun
+  // ===================================================================
+  const AGAMA = ['Islam', 'Kristen', 'Katolik', 'Hindu', 'Buddha', 'Konghucu', 'Kepercayaan'];
+  const PROVINSI = [
+    'Aceh', 'Sumatera Utara', 'Sumatera Barat', 'Riau', 'Kepulauan Riau', 'Jambi', 'Sumatera Selatan',
+    'Kepulauan Bangka Belitung', 'Bengkulu', 'Lampung', 'DKI Jakarta', 'Jawa Barat', 'Banten', 'Jawa Tengah',
+    'DI Yogyakarta', 'Jawa Timur', 'Bali', 'Nusa Tenggara Barat', 'Nusa Tenggara Timur', 'Kalimantan Barat',
+    'Kalimantan Tengah', 'Kalimantan Selatan', 'Kalimantan Timur', 'Kalimantan Utara', 'Sulawesi Utara',
+    'Gorontalo', 'Sulawesi Tengah', 'Sulawesi Barat', 'Sulawesi Selatan', 'Sulawesi Tenggara', 'Maluku',
+    'Maluku Utara', 'Papua', 'Papua Barat', 'Papua Barat Daya', 'Papua Selatan', 'Papua Tengah', 'Papua Pegunungan',
+  ];
+
+  const raw = (s) => ({ __raw: s });
+  const IKON = {
+    tambah: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>',
+    edit: '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>',
+    hapus: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>',
+    tutup: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>',
+    simpan: '<polyline points="20 6 9 17 4 12"/>',
+    batal: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+  };
+  const ikon = (n) => raw(`<svg class="ikon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IKON[n]}</svg>`);
+
+  const fotoOk = (f) => typeof f === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(f);
+
+  function inisial(nama) {
+    const p = String(nama || '?').trim().split(/\s+/).slice(0, 2);
+    return p.map((x) => x.charAt(0).toUpperCase()).join('') || '?';
+  }
+
+  // Perkecil foto menjadi 300x400 JPEG agar ringan disimpan (sekitar 20-40 KB)
+  function perkecilFoto(file) {
+    return new Promise((resolve, reject) => {
+      if (!file || !/^image\//.test(file.type)) return reject(new Error('File harus berupa gambar.'));
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const W = 300;
+        const H = 400;
+        const c = document.createElement('canvas');
+        c.width = W;
+        c.height = H;
+        const ctx = c.getContext('2d');
+        const skala = Math.max(W / img.width, H / img.height);
+        const w = img.width * skala;
+        const h = img.height * skala;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, W, H);
+        ctx.drawImage(img, (W - w) / 2, (H - h) * 0.2, w, h); // condong ke bagian atas (wajah)
+        resolve(c.toDataURL('image/jpeg', 0.82));
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Gambar tidak dapat dibaca.'));
+      };
+      img.src = url;
     });
   }
 
-  function dialogSiswa(kelasList, siswa, kelasDefault, after) {
-    const s = siswa || { aktif: true };
-    openDialog(
-      siswa ? 'Ubah data siswa' : 'Tambah siswa',
-      html`
-        <div class="form-grid">
-          <label class="span2">Nama lengkap<input name="nama" required value="${s.nama || ''}"></label>
-          <label>Nama panggilan<input name="panggilan" value="${s.panggilan || ''}"></label>
-          <label>Jenis kelamin
-            <select name="jenis_kelamin">
-              <option value="">-</option>
-              <option value="L" ${sel(s.jenis_kelamin, 'L')}>Laki-laki</option>
-              <option value="P" ${sel(s.jenis_kelamin, 'P')}>Perempuan</option>
-            </select></label>
-          <label>Tempat lahir<input name="tempat_lahir" value="${s.tempat_lahir || ''}"></label>
-          <label>Tanggal lahir<input type="date" name="tanggal_lahir" value="${s.tanggal_lahir || ''}"></label>
-          <label>NIS<input name="nis" value="${s.nis || ''}"></label>
-          <label>NISN<input name="nisn" value="${s.nisn || ''}"></label>
-          <label class="span2">Nama orang tua / wali<input name="nama_ortu" value="${s.nama_ortu || ''}"></label>
-          <label class="span2">Alamat<input name="alamat" value="${s.alamat || ''}"></label>
-          <label>Kelas
-            <select name="kelas_id">${kelasList.map((k) => html`<option value="${k.id}" ${sel(k.id, s.kelas_id || kelasDefault)}>${k.nama}</option>`)}</select></label>
-          <label>Status
-            <select name="aktif"><option value="1" ${sel(s.aktif, true)}>Aktif</option><option value="0" ${sel(s.aktif, false)}>Nonaktif (lulus/pindah)</option></select></label>
-        </div>`,
-      async (f) => {
-        const row = {
-          nama: f.nama.trim(),
-          panggilan: f.panggilan.trim() || null,
-          jenis_kelamin: f.jenis_kelamin || null,
-          tempat_lahir: f.tempat_lahir.trim() || null,
-          tanggal_lahir: f.tanggal_lahir || null,
-          nis: f.nis.trim() || null,
-          nisn: f.nisn.trim() || null,
-          nama_ortu: f.nama_ortu.trim() || null,
-          alamat: f.alamat.trim() || null,
-          kelas_id: f.kelas_id,
-          aktif: f.aktif === '1',
-        };
-        const q = siswa ? sb.from('siswa').update(row).eq('id', siswa.id) : sb.from('siswa').insert(row);
-        const { error } = await q;
-        if (error) throw error;
-        toast('Data siswa tersimpan', 'ok');
-        after();
-      }
+  async function viewSiswa(my, sid, extra) {
+    const baru = sid === 'baru';
+    const tab = !baru && extra === 'tahun' ? 'tahun' : 'biodata';
+
+    const kl = await sb.from('kelas').select('id,nama,tahun_ajaran,kelompok').order('nama');
+    if (kl.error) throw kl.error;
+    const kelasList = kl.data;
+
+    let siswa;
+    let riwayat = [];
+    if (baru) {
+      const kelas = kelasList.find((k) => k.id === extra) || kelasList[0];
+      if (!kelas) throw new Error('Belum ada kelas. Buat kelas terlebih dahulu.');
+      siswa = { aktif: true, kelas_id: kelas.id, angkatan: kelas.tahun_ajaran || '', jenis_kota: 'Kota', kelas };
+    } else {
+      const [rs, rr] = await Promise.all([
+        sb.from('siswa').select('*, kelas(*)').eq('id', sid).single(),
+        tab === 'tahun'
+          ? sb.from('rapor').select('*').eq('siswa_id', sid).order('tahun_ajaran', { ascending: false }).order('semester', { ascending: false })
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      if (rs.error) throw rs.error;
+      if (rr.error) throw rr.error;
+      siswa = rs.data;
+      riwayat = rr.data;
+    }
+    if (my !== state.token) return;
+
+    const kelasId = siswa.kelas_id;
+    const kelasNama = (kelasList.find((k) => k.id === kelasId) || {}).nama || 'Kelas';
+
+    const tabLink = (nama, href, aktif) =>
+      aktif ? html`<span class="tab on" aria-current="page">${nama}</span>`
+        : href ? html`<a class="tab" href="${href}">${nama}</a>`
+          : html`<span class="tab off" title="Simpan siswa terlebih dahulu">${nama}</span>`;
+
+    renderShell(html`
+      <div class="crumbs no-print"><a href="#/kelas/${kelasId}">${kelasNama}</a> &rsaquo; ${baru ? 'Siswa baru' : siswa.nama}</div>
+      <section class="buku">
+        <div class="buku-banner"><h2>BUKU INDUK ANAK</h2></div>
+        <div class="buku-tabs">
+          ${tabLink('DATA PER TAHUN', baru ? '' : `#/siswa/${siswa.id}/tahun`, tab === 'tahun')}
+          ${tabLink('BIODATA ANAK', baru ? '' : `#/siswa/${siswa.id}`, tab === 'biodata')}
+        </div>
+        <div class="buku-body" id="bukuBody"></div>
+      </section>`);
+    const body = document.getElementById('bukuBody');
+
+    // ------------------------------------------------------------
+    // Tab: Data per tahun
+    // ------------------------------------------------------------
+    if (tab === 'tahun') {
+      const per = state.periode || defaultPeriode(siswa.kelas);
+      body.innerHTML = html`
+        <div class="page-head">
+          <div><h3 style="margin:0">${siswa.nama}</h3><div class="muted small">Riwayat rapor per semester</div></div>
+          <a class="btn primary" href="${rhref('rapor', siswa.id, per.ta, per.sem)}">Isi rapor ${per.ta} / sem ${per.sem}</a>
+        </div>
+        <div class="table-wrap bukutabel">
+          ${riwayat.length ? html`
+          <table>
+            <thead><tr><th>Periode</th><th>Kelas</th><th>Status</th><th>BB (kg)</th><th>TB (cm)</th><th>LK (cm)</th><th>Tidak hadir</th><th></th></tr></thead>
+            <tbody>${riwayat.map((r) => html`<tr>
+              <td><strong>${r.tahun_ajaran}</strong> &middot; Sem ${r.semester}</td>
+              <td>${r.kelas_nama || '-'}</td>
+              <td><span class="pill ${r.status}">${r.status === 'final' ? 'Final' : 'Draf'}</span></td>
+              <td>${r.berat_badan ?? '-'}</td><td>${r.tinggi_badan ?? '-'}</td><td>${r.lingkar_kepala ?? '-'}</td>
+              <td>S ${r.sakit} &middot; I ${r.izin} &middot; A ${r.alpa}</td>
+              <td class="actions">
+                <a class="btn small" href="${rhref('rapor', siswa.id, r.tahun_ajaran, r.semester)}">Buka</a>
+                <a class="btn small" href="${rhref('cetak', siswa.id, r.tahun_ajaran, r.semester)}">Cetak</a>
+              </td></tr>`)}</tbody>
+          </table>` : html`<p style="padding:1rem;margin:0">Belum ada rapor untuk siswa ini.</p>`}
+        </div>
+        <div class="aksi satu"><a class="btn-aksi" href="#/kelas/${kelasId}">${ikon('tutup')}<span>TUTUP</span></a></div>`.__raw;
+      return;
+    }
+
+    // ------------------------------------------------------------
+    // Tab: Biodata anak
+    // ------------------------------------------------------------
+    const salin = (s) => {
+      const c = { ...s };
+      delete c.kelas;
+      return c;
+    };
+    let cur = salin(siswa);
+    let editing = baru;
+
+    const dis = () => (editing ? '' : 'disabled');
+    const inp = (name, attrs = '') => raw(`<input id="f-${name}" name="${name}" value="${esc(cur[name])}" ${dis()} ${attrs}>`);
+    const pilih = (name, pasangan) => raw(
+      `<select id="f-${name}" name="${name}" ${dis()}><option value=""></option>` +
+      pasangan.map(([v, t]) => `<option value="${esc(v)}" ${String(cur[name] ?? '') === String(v) ? 'selected' : ''}>${esc(t)}</option>`).join('') +
+      '</select>'
     );
+    const baris = (label, name, kontrol) => html`<div class="frow"><label for="f-${name}">${label}</label>${kontrol}</div>`;
+
+    const fotoBox = () => html`
+      <div class="foto-box">
+        ${fotoOk(cur.foto)
+          ? raw(`<img class="foto" src="${esc(cur.foto)}" alt="Foto ${esc(cur.panggilan || cur.nama)}">`)
+          : html`<div class="foto foto-ph" aria-hidden="true">${inisial(cur.panggilan || cur.nama)}</div>`}
+        ${editing ? html`<div class="foto-aksi">
+          <label class="btn small">Pilih foto<input type="file" id="fFoto" accept="image/*" hidden></label>
+          ${fotoOk(cur.foto) ? html`<button type="button" class="btn small danger" id="btnFotoHapus">Hapus</button>` : ''}
+        </div>` : ''}
+      </div>`;
+
+    function sinkron() {
+      const form = document.getElementById('fBio');
+      if (!form) return;
+      const f = Object.fromEntries(new FormData(form));
+      Object.keys(f).forEach((k) => {
+        cur[k] = k === 'aktif' ? f[k] === '1' : f[k];
+      });
+    }
+
+    function render() {
+      body.className = 'buku-body ' + (editing ? 'ubah' : 'lihat');
+      const statusSel = `<select id="f-aktif" name="aktif" ${dis()}>` +
+        `<option value="1" ${cur.aktif ? 'selected' : ''}>Aktif</option>` +
+        `<option value="0" ${cur.aktif ? '' : 'selected'}>Nonaktif (lulus/pindah)</option></select>`;
+
+      body.innerHTML = html`
+        <form id="fBio" autocomplete="off" novalidate>
+          <div class="buku-grid">
+            <fieldset class="grup">
+              <legend>DATA ANAK</legend>
+              <div class="anak-top">
+                ${fotoBox()}
+                <div class="anak-fields">
+                  ${baris('NIPD', 'nipd', inp('nipd'))}
+                  ${baris('Nama', 'panggilan', inp('panggilan', 'placeholder="Nama panggilan"'))}
+                  ${baris('Jenis Kel.', 'jenis_kelamin', pilih('jenis_kelamin', [['L', 'Laki-laki'], ['P', 'Perempuan']]))}
+                  ${baris('Angkatan', 'angkatan', inp('angkatan', 'placeholder="2026/2027" maxlength="9"'))}
+                </div>
+              </div>
+              ${baris('NIK / No. KTP', 'nik', inp('nik', 'inputmode="numeric" maxlength="16"'))}
+              ${baris('NISN', 'nisn', inp('nisn', 'inputmode="numeric" maxlength="10"'))}
+              ${baris('Nama Lengkap', 'nama', inp('nama', 'aria-required="true"'))}
+              ${baris('Agama', 'agama', pilih('agama', AGAMA.map((a) => [a, a])))}
+              ${baris('Tempat Lahir', 'tempat_lahir', inp('tempat_lahir'))}
+              ${baris('Tanggal Lahir', 'tanggal_lahir', inp('tanggal_lahir', 'type="date"'))}
+              <div class="frow"><label for="f-anak_ke">Anak Ke-</label>
+                <div class="pair">${inp('anak_ke', 'inputmode="numeric" maxlength="2"')}<span>Dari</span>${inp('dari_bersaudara', 'inputmode="numeric" maxlength="2" aria-label="Dari berapa bersaudara"')}</div>
+              </div>
+            </fieldset>
+
+            <div class="kolom-kanan">
+              <fieldset class="grup">
+                <legend>DATA ORANG TUA</legend>
+                ${baris('Nama Ayah', 'nama_ayah', inp('nama_ayah'))}
+                ${baris('Nama Ibu', 'nama_ibu', inp('nama_ibu'))}
+                ${baris('Pekerjaan Ayah', 'pekerjaan_ayah', inp('pekerjaan_ayah'))}
+                ${baris('Pekerjaan Ibu', 'pekerjaan_ibu', inp('pekerjaan_ibu'))}
+                ${baris('HP Orang Tua', 'hp_ortu', inp('hp_ortu', 'type="tel" inputmode="tel" maxlength="20"'))}
+              </fieldset>
+              <fieldset class="grup">
+                <legend>DATA TEMPAT TINGGAL</legend>
+                ${baris('Alamat Rumah', 'alamat', inp('alamat'))}
+                ${baris('Kecamatan', 'kecamatan', inp('kecamatan'))}
+                <div class="frow">${pilih('jenis_kota', [['Kota', 'Kota'], ['Kabupaten', 'Kabupaten']])}${inp('kota', 'aria-label="Nama kota atau kabupaten"')}</div>
+                ${baris('Provinsi', 'provinsi', pilih('provinsi', PROVINSI.map((p) => [p, p])))}
+                ${baris('Kode Pos', 'kode_pos', inp('kode_pos', 'inputmode="numeric" maxlength="5"'))}
+              </fieldset>
+              <fieldset class="grup">
+                <legend>DATA KELAS</legend>
+                ${baris('Kelas', 'kelas_id', pilih('kelas_id', kelasList.map((k) => [k.id, k.nama])))}
+                ${baris('Status', 'aktif', raw(statusSel))}
+              </fieldset>
+            </div>
+          </div>
+        </form>
+        <div class="aksi ${editing ? 'dua' : ''}">
+          ${editing ? html`
+            <button type="button" class="btn-aksi" id="btnSimpan">${ikon('simpan')}<span>SIMPAN</span></button>
+            <button type="button" class="btn-aksi" id="btnBatal">${ikon('batal')}<span>BATAL</span></button>`
+            : html`
+            <a class="btn-aksi" href="#/siswa/baru/${kelasId}">${ikon('tambah')}<span>TAMBAH</span></a>
+            <button type="button" class="btn-aksi" id="btnEdit">${ikon('edit')}<span>EDIT</span></button>
+            <button type="button" class="btn-aksi" id="btnHapus">${ikon('hapus')}<span>HAPUS</span></button>
+            <a class="btn-aksi" href="#/kelas/${kelasId}">${ikon('tutup')}<span>TUTUP</span></a>`}
+        </div>`.__raw;
+      bind();
+    }
+
+    async function simpan() {
+      sinkron();
+      const t = (k) => String(cur[k] ?? '').trim();
+      const nul = (k) => t(k) || null;
+      const angka = (k) => (t(k) ? Number(t(k)) : null);
+      const ke = angka('anak_ke');
+      const dari = angka('dari_bersaudara');
+      const salah = (v) => v !== null && !(Number.isInteger(v) && v > 0 && v < 100);
+
+      if (!t('nama')) return toast('Nama lengkap wajib diisi.', 'err');
+      if (!cur.kelas_id) return toast('Pilih kelas terlebih dahulu.', 'err');
+      if (t('nik') && !/^\d{16}$/.test(t('nik'))) return toast('NIK harus 16 digit angka.', 'err');
+      if (t('nisn') && !/^\d{10}$/.test(t('nisn'))) return toast('NISN harus 10 digit angka.', 'err');
+      if (t('kode_pos') && !/^\d{5}$/.test(t('kode_pos'))) return toast('Kode pos harus 5 digit angka.', 'err');
+      if (t('angkatan') && !/^\d{4}\/\d{4}$/.test(t('angkatan'))) return toast('Format angkatan: 2026/2027.', 'err');
+      if (t('hp_ortu') && !/^[0-9+\-\s()]{6,20}$/.test(t('hp_ortu'))) return toast('Nomor HP hanya boleh berisi angka.', 'err');
+      if (salah(ke) || salah(dari)) return toast('Anak ke- dan jumlah bersaudara harus berupa angka.', 'err');
+      if (ke !== null && dari !== null && ke > dari) return toast('Anak ke- tidak boleh lebih besar dari jumlah bersaudara.', 'err');
+
+      const row = {
+        kelas_id: cur.kelas_id,
+        nipd: nul('nipd'),
+        nama: t('nama'),
+        panggilan: nul('panggilan'),
+        jenis_kelamin: cur.jenis_kelamin || null,
+        angkatan: nul('angkatan'),
+        nik: nul('nik'),
+        nisn: nul('nisn'),
+        agama: nul('agama'),
+        tempat_lahir: nul('tempat_lahir'),
+        tanggal_lahir: cur.tanggal_lahir || null,
+        anak_ke: ke,
+        dari_bersaudara: dari,
+        foto: fotoOk(cur.foto) ? cur.foto : null,
+        nama_ayah: nul('nama_ayah'),
+        nama_ibu: nul('nama_ibu'),
+        pekerjaan_ayah: nul('pekerjaan_ayah'),
+        pekerjaan_ibu: nul('pekerjaan_ibu'),
+        hp_ortu: nul('hp_ortu'),
+        alamat: nul('alamat'),
+        kecamatan: nul('kecamatan'),
+        jenis_kota: nul('jenis_kota'),
+        kota: nul('kota'),
+        provinsi: nul('provinsi'),
+        kode_pos: nul('kode_pos'),
+        aktif: !!cur.aktif,
+      };
+
+      const bar = document.querySelector('.aksi');
+      setBusy(bar, true);
+      try {
+        if (baru) {
+          const { data, error } = await sb.from('siswa').insert(row).select('id').single();
+          if (error) throw error;
+          state.dirty = false;
+          toast('Siswa ditambahkan', 'ok');
+          location.hash = `#/siswa/${data.id}`;
+        } else {
+          const { error } = await sb.from('siswa').update(row).eq('id', siswa.id);
+          if (error) throw error;
+          state.dirty = false;
+          toast('Biodata tersimpan', 'ok');
+          await route(); // muat ulang data terbaru
+        }
+      } catch (err) {
+        toast(errMsg(err), 'err');
+        setBusy(bar, false);
+      }
+    }
+
+    async function hapus() {
+      const pesan = `Hapus siswa "${siswa.nama}"?\n\nSemua rapor siswa ini ikut terhapus dan tidak dapat dikembalikan. ` +
+        'Jika siswa hanya pindah atau lulus, lebih aman ubah Status menjadi Nonaktif lewat tombol Edit.';
+      if (!confirm(pesan)) return;
+      const { error } = await sb.from('siswa').delete().eq('id', siswa.id);
+      if (error) return toast(errMsg(error), 'err');
+      toast('Siswa dihapus', 'ok');
+      location.hash = `#/kelas/${kelasId}`;
+    }
+
+    function bind() {
+      const q = (id) => document.getElementById(id);
+      if (q('btnEdit')) q('btnEdit').onclick = () => { editing = true; render(); const n = q('f-nama'); if (n) n.focus(); };
+      if (q('btnBatal')) {
+        q('btnBatal').onclick = () => {
+          if (baru) { location.hash = `#/kelas/${kelasId}`; return; }
+          state.dirty = false;
+          cur = salin(siswa);
+          editing = false;
+          render();
+        };
+      }
+      if (q('btnSimpan')) q('btnSimpan').onclick = simpan;
+      if (q('btnHapus')) q('btnHapus').onclick = hapus;
+      if (q('fFoto')) {
+        q('fFoto').onchange = async (e) => {
+          const file = e.target.files && e.target.files[0];
+          if (!file) return;
+          try {
+            const url = await perkecilFoto(file);
+            sinkron();
+            cur.foto = url;
+            state.dirty = true;
+            render();
+          } catch (err) {
+            toast(errMsg(err), 'err');
+          }
+        };
+      }
+      if (q('btnFotoHapus')) q('btnFotoHapus').onclick = () => { sinkron(); cur.foto = null; state.dirty = true; render(); };
+      const form = q('fBio');
+      form.addEventListener('input', () => { if (editing) state.dirty = true; });
+      form.addEventListener('submit', (e) => { e.preventDefault(); if (editing) simpan(); });
+    }
+
+    render();
+    if (baru) {
+      const n = document.getElementById('f-nama');
+      if (n) n.focus();
+    }
   }
 
   function dialogImpor(kelas, after) {
     openDialog(
       'Impor daftar nama siswa',
       html`<label>Satu nama per baris<textarea name="daftar" rows="10" required></textarea></label>
-           <p class="muted small">Ke kelas: ${kelas.nama}. Jenis kelamin, tanggal lahir, dan data lain dilengkapi lewat tombol Ubah.</p>`,
+           <p class="muted small">Ke kelas: ${kelas.nama}. Jenis kelamin, tanggal lahir, dan data lain dilengkapi lewat halaman Biodata (klik nama siswa).</p>`,
       async (f) => {
         const names = f.daftar.split('\n').map((x) => x.trim()).filter(Boolean);
         if (!names.length) throw new Error('Daftar masih kosong.');
@@ -575,7 +892,7 @@
           <div class="muted">Tahun ajaran ${ta} &middot; Semester ${sem} &middot; ${usiaTeks(siswa.tanggal_lahir, tglDefault) || 'usia belum diisi'}
             <span class="pill ${status}">${status === 'none' ? 'Belum dibuat' : status === 'draft' ? 'Draf' : 'Final'}</span></div>
         </div>
-        <div class="actions"><a class="btn" href="${rhref('riwayat', siswa.id)}">Riwayat</a></div>
+        <div class="actions"><a class="btn" href="#/siswa/${siswa.id}">Biodata</a><a class="btn" href="${rhref('riwayat', siswa.id)}">Riwayat</a></div>
       </div>
 
       <div class="card">
@@ -746,44 +1063,6 @@
   }
 
   // ===================================================================
-  // Riwayat per siswa
-  // ===================================================================
-  async function viewRiwayat(my, sid) {
-    const [rs, rr] = await Promise.all([
-      sb.from('siswa').select('*, kelas(*)').eq('id', sid).single(),
-      sb.from('rapor').select('*').eq('siswa_id', sid).order('tahun_ajaran', { ascending: false }).order('semester', { ascending: false }),
-    ]);
-    if (rs.error) throw rs.error;
-    if (rr.error) throw rr.error;
-    if (my !== state.token) return;
-    const siswa = rs.data;
-    const per = state.periode || defaultPeriode(siswa.kelas);
-
-    renderShell(html`
-      <div class="crumbs"><a href="#/kelas/${siswa.kelas_id}">${siswa.kelas ? siswa.kelas.nama : 'Kelas'}</a> &rsaquo; Riwayat</div>
-      <div class="page-head">
-        <div><h2>${siswa.nama}</h2><div class="muted">Riwayat rapor per semester</div></div>
-        <a class="btn primary" href="${rhref('rapor', siswa.id, per.ta, per.sem)}">Isi rapor ${per.ta} / sem ${per.sem}</a>
-      </div>
-      <div class="card table-wrap" style="padding:0">
-        ${rr.data.length ? html`
-        <table>
-          <thead><tr><th>Periode</th><th>Kelas</th><th>Status</th><th>BB (kg)</th><th>TB (cm)</th><th>LK (cm)</th><th>Hadir tidak penuh</th><th></th></tr></thead>
-          <tbody>${rr.data.map((r) => html`<tr>
-            <td><strong>${r.tahun_ajaran}</strong> &middot; Sem ${r.semester}</td>
-            <td>${r.kelas_nama || '-'}</td>
-            <td><span class="pill ${r.status}">${r.status === 'final' ? 'Final' : 'Draf'}</span></td>
-            <td>${r.berat_badan ?? '-'}</td><td>${r.tinggi_badan ?? '-'}</td><td>${r.lingkar_kepala ?? '-'}</td>
-            <td>S ${r.sakit} &middot; I ${r.izin} &middot; A ${r.alpa}</td>
-            <td class="actions">
-              <a class="btn small" href="${rhref('rapor', siswa.id, r.tahun_ajaran, r.semester)}">Buka</a>
-              <a class="btn small" href="${rhref('cetak', siswa.id, r.tahun_ajaran, r.semester)}">Cetak</a>
-            </td></tr>`)}</tbody>
-        </table>` : html`<p style="padding:1rem">Belum ada rapor untuk siswa ini.</p>`}
-      </div>`);
-  }
-
-  // ===================================================================
   // Pratinjau & cetak
   // ===================================================================
   async function viewCetak(my, sid, ta, semStr) {
@@ -831,7 +1110,7 @@
 
         <table class="ident">
           <tr><td>Nama anak</td><td>:</td><td><strong>${siswa.nama}</strong></td></tr>
-          <tr><td>NIS / NISN</td><td>:</td><td>${siswa.nis || '-'} / ${siswa.nisn || '-'}</td></tr>
+          <tr><td>NIPD / NISN</td><td>:</td><td>${siswa.nipd || '-'} / ${siswa.nisn || '-'}</td></tr>
           <tr><td>Kelompok / Kelas</td><td>:</td><td>${[kelompok, kelasNama].filter(Boolean).join(' / ') || '-'}</td></tr>
           <tr><td>Usia</td><td>:</td><td>${usiaTeks(siswa.tanggal_lahir, r.tanggal_rapor) || '-'}</td></tr>
           <tr><td>Tahun ajaran / Semester</td><td>:</td><td>${r.tahun_ajaran} / ${r.semester} (${r.semester === 1 ? 'Ganjil' : 'Genap'})</td></tr>
@@ -864,7 +1143,7 @@
 
         <div class="tempat">${s.kota ? s.kota + ', ' : ''}${tglID(r.tanggal_rapor)}</div>
         <div class="ttd">
-          <div>Orang Tua / Wali<div class="ruang"></div><div class="nama">${siswa.nama_ortu || '................................'}</div></div>
+          <div>Orang Tua / Wali<div class="ruang"></div><div class="nama">${siswa.nama_ibu || siswa.nama_ayah || '................................'}</div></div>
           <div>Wali Kelas<div class="ruang"></div><div class="nama">${(wali && wali.nama) || '................................'}</div>${wali && wali.nip ? html`<div>NIP. ${wali.nip}</div>` : ''}</div>
           <div>Kepala Sekolah<div class="ruang"></div><div class="nama">${s.kepala_sekolah || '................................'}</div>${s.nip_kepala ? html`<div>NIP. ${s.nip_kepala}</div>` : ''}</div>
         </div>
