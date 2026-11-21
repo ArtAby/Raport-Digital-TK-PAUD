@@ -55,7 +55,7 @@
     ['sangat', 'Sangat Berkembang'],
   ];
 
-  const state = { user: null, profile: null, sekolah: null, periode: null, token: 0, dirty: false, tampilNonaktif: false };
+  const state = { user: null, profile: null, sekolah: null, periode: null, token: 0, dirty: false, tampilNonaktif: false, portal: null, pilih: 'admin', loginPeriode: null };
 
   // ===================================================================
   // Util: templating aman (semua nilai di-escape kecuali html`...` bersarang)
@@ -179,7 +179,8 @@
   async function setSession(session) {
     state.user = session ? session.user : null;
     state.profile = null;
-    state.periode = null;
+    state.periode = session && state.loginPeriode ? state.loginPeriode : null;
+    state.loginPeriode = null;
     if (state.user) {
       try {
         await loadProfile();
@@ -193,9 +194,27 @@
   async function route() {
     const my = ++state.token;
     state.dirty = false;
-    if (!state.user) return renderAuth('masuk');
+    document.body.classList.remove('bg-buku');
+    if (!state.user) {
+      document.body.removeAttribute('data-portal');
+      return renderAuth(state.pilih || 'admin');
+    }
     if (!state.profile) return renderSimple('Profil tidak ditemukan', 'Akun ini belum memiliki profil. Coba keluar lalu masuk kembali, atau hubungi admin.');
     if (!state.profile.aktif) return renderPending();
+
+    // Pemisahan Admin / Guru: jenis akun harus sesuai tab yang dipilih di halaman masuk
+    const peran = isAdmin() ? 'admin' : 'guru';
+    if (state.portal && state.portal !== peran) {
+      state.pilih = peran;
+      state.portal = null;
+      toast(peran === 'admin'
+        ? 'Akun ini terdaftar sebagai Admin. Silakan masuk melalui tab Admin.'
+        : 'Akun ini terdaftar sebagai Guru. Silakan masuk melalui tab Guru.', 'err');
+      sb.auth.signOut();
+      return;
+    }
+    state.portal = peran;
+    state.pilih = peran;
 
     const parts = location.hash.replace(/^#\/?/, '').split('/').map((p) => decodeURIComponent(p));
     const [page, a, b, c] = parts;
@@ -226,12 +245,14 @@
   // ===================================================================
   function renderShell(content) {
     const s = state.sekolah;
+    document.body.dataset.portal = isAdmin() ? 'admin' : 'guru';
     $app.innerHTML = html`
       ${DEMO ? html`<div class="demo-banner no-print">Mode demo: data hanya tersimpan di peramban ini dan narasi AI disimulasikan.
         <button class="link" id="btnResetDemo">Reset data demo</button></div>` : ''}
       <header class="topbar no-print">
-        <a class="brand" href="#/">Rapor PAUD <small>${s && s.nama ? s.nama : ''}</small></a>
+        <a class="brand" href="#/">${raw(logoSvg())}<span>Rapor Digital PAUD<small>${s && s.nama ? s.nama : ''}</small></span></a>
         <nav>
+          <span class="role-badge">${isAdmin() ? 'Admin' : 'Guru'}</span>
           <a href="#/">Beranda</a>
           ${isAdmin() ? html`<a href="#/admin">Admin</a>` : ''}
           <button class="link" id="btnProfil" title="Ubah profil">${state.profile.nama || state.user.email}</button>
@@ -274,60 +295,245 @@
     };
   }
 
-  function renderAuth(mode) {
-    if (DEMO) {
-      $app.innerHTML = html`
-        <div class="auth-wrap"><div class="card auth">
-          <h1>Rapor Digital PAUD</h1>
-          <p class="muted">Kurikulum Merdeka &middot; Fase Fondasi</p>
-          <div class="demo-note">Ini <strong>versi demo</strong>. Tidak perlu daftar. Pilih peran di bawah untuk mencoba.
-            Data contoh bersifat fiktif dan hanya tersimpan di peramban Anda.</div>
-          <button class="btn primary block" data-demo="admin@demo.sch">Masuk sebagai Admin (Bu Sari)</button>
-          <button class="btn block" data-demo="guru@demo.sch">Masuk sebagai Guru (Bu Dewi)</button>
-          <p class="muted small" style="margin-top:1rem">Admin melihat semua kelas dan menu Admin. Guru hanya melihat kelasnya sendiri.</p>
-        </div></div>`.__raw;
-      document.querySelectorAll('[data-demo]').forEach((b) => {
-        b.onclick = () => sb.auth.signInWithPassword({ email: b.dataset.demo, password: 'demo' });
-      });
-      return;
-    }
-    $app.innerHTML = html`
-      <div class="auth-wrap"><div class="card auth">
-        <h1>Rapor Digital PAUD</h1>
-        <p class="muted">Kurikulum Merdeka &middot; Fase Fondasi</p>
-        <div class="tabs">
-          <button type="button" data-m="masuk" class="${mode === 'masuk' ? 'on' : ''}">Masuk</button>
-          <button type="button" data-m="daftar" class="${mode === 'daftar' ? 'on' : ''}">Daftar</button>
-        </div>
-        <form id="fAuth">
-          ${mode === 'daftar' ? html`<label>Nama lengkap<input name="nama" required autocomplete="name"></label>` : ''}
-          <label>Email<input type="email" name="email" required autocomplete="username"></label>
-          <label>Kata sandi<input type="password" name="password" required minlength="8" autocomplete="${mode === 'daftar' ? 'new-password' : 'current-password'}"></label>
-          <button class="btn primary block">${mode === 'daftar' ? 'Daftar' : 'Masuk'}</button>
-        </form>
-        ${mode === 'daftar' ? html`<p class="muted small">Akun baru perlu diaktifkan admin sekolah. Pendaftar pertama otomatis menjadi admin.</p>` : ''}
-      </div></div>`.__raw;
+  // ===================================================================
+  // Halaman masuk: tampilan Admin dan Guru dibedakan sejak awal
+  // ===================================================================
+  const UI = {
+    user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+    lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
+    eyeoff: '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>',
+    calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+    clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+    shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>',
+    users: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
+    book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+    printer: '<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>',
+    sliders: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
+    school: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+    spark: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 16l.7 1.8L21.5 18.5l-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z"/>',
+    teacher: '<rect x="2" y="3" width="20" height="13" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="16" x2="12" y2="21"/>',
+  };
+  const svgi = (n, s = 20) =>
+    `<svg class="ui" viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${UI[n]}</svg>`;
 
-    document.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => renderAuth(b.dataset.m)));
-    const form = document.getElementById('fAuth');
+  const logoSvg = () =>
+    '<svg class="logo" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="22" fill="#fff" stroke="var(--a, #1b6b3a)" stroke-width="2.5"/>' +
+    '<path d="M11 31c4.2-2.2 8.4-2 13 1 4.6-3 8.8-3.2 13-1V19c-4.2-2.2-8.4-2-13 1-4.6-3-8.8-3.2-13-1z" fill="var(--a, #1b6b3a)"/>' +
+    '<path d="M24 20v12" stroke="#fff" stroke-width="1.6"/>' +
+    '<path d="M24 17c0-4.6 3.2-7 7-7 0 4.4-2.6 7-7 7z" fill="var(--g, #c9992b)"/></svg>';
+
+  const PORTAL = {
+    admin: {
+      nama: 'Administrator',
+      tab: 'Admin',
+      tag: 'Panel Administrator',
+      h1a: 'Pusat Kendali',
+      h1b: 'Rapor Digital PAUD',
+      sub: 'Kelola data sekolah, kelas, wali kelas, dan hak akses pengguna dalam satu panel yang rapi dan aman.',
+      lead: 'Khusus pengelola sekolah. Masuk untuk mengatur seluruh kelas, siswa, dan akun guru.',
+      chips: [
+        ['school', 'Data Sekolah', 'Profil lembaga dan kepala sekolah'],
+        ['users', 'Kelas & Wali', 'Atur kelas dan wali kelas'],
+        ['sliders', 'Hak Akses', 'Aktifkan dan kelola akun guru'],
+        ['book', 'Semua Siswa', 'Buku induk seluruh kelas'],
+      ],
+      user: 'admin',
+      lupa: 'Hubungi pengelola sistem untuk mengatur ulang kata sandi Admin.',
+    },
+    guru: {
+      nama: 'Guru / Wali Kelas',
+      tab: 'Guru',
+      tag: 'Ruang Guru',
+      h1a: 'Rapor Digital PAUD',
+      h1b: 'yang Menyenangkan',
+      sub: 'Catat perkembangan anak, susun narasi capaian, dan cetak rapor kelas Anda dengan mudah.',
+      lead: 'Masuk untuk mengisi rapor dan mengelola buku induk anak di kelas yang Anda ampu.',
+      chips: [
+        ['file', 'Rapor Digital', 'Isi rapor tiap semester'],
+        ['book', 'Buku Induk Anak', 'Biodata dan riwayat anak'],
+        ['spark', 'Narasi Capaian', 'Bantuan menyusun narasi'],
+        ['printer', 'Cetak Rapor', 'Siap cetak ukuran A4'],
+      ],
+      user: 'guru',
+      lupa: 'Hubungi admin sekolah untuk mengatur ulang kata sandi Anda.',
+    },
+  };
+
+  function ilustrasi() {
+    const bunga = [[60, 428], [130, 444], [215, 430], [395, 438], [540, 446], [700, 440], [845, 432], [880, 448], [300, 450]]
+      .map(([x, y]) => `<g transform="translate(${x} ${y})"><circle r="5" cy="-7" fill="#fff"/><circle r="5" cx="7" fill="#fff"/><circle r="5" cy="7" fill="#fff"/><circle r="5" cx="-7" fill="#fff"/><circle r="4" fill="#f2c63d"/></g>`)
+      .join('');
+    return `
+    <svg class="hero-art" viewBox="0 0 900 460" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+      <circle cx="110" cy="96" r="46" fill="#fff6c9" opacity=".75"/>
+      <g fill="#fff" opacity=".9"><ellipse cx="190" cy="64" rx="54" ry="15"/><ellipse cx="226" cy="52" rx="34" ry="15"/><ellipse cx="640" cy="44" rx="62" ry="16"/><ellipse cx="682" cy="31" rx="36" ry="14"/></g>
+      <path d="M770 98l72-30-30 58-16-18z" fill="#fff" stroke="var(--a)" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M0 300C120 232 240 252 360 290c110 35 200-40 340-30 90 6 150 30 200 20V460H0z" fill="var(--h1)"/>
+      <path d="M0 352c140-52 260-22 400-2s280-40 500-10V460H0z" fill="var(--h2)"/>
+      <g transform="translate(470 150)">
+        <rect x="20" y="90" width="260" height="140" rx="8" fill="#fbf4e2"/>
+        <polygon points="0,98 150,42 300,98" fill="var(--roof)"/>
+        <rect x="0" y="94" width="300" height="10" rx="4" fill="var(--roofd)"/>
+        <rect x="108" y="22" width="84" height="76" rx="6" fill="#fffaf0"/>
+        <polygon points="98,26 150,-8 202,26" fill="var(--roofd)"/>
+        <circle cx="150" cy="52" r="15" fill="#bfe3f2" stroke="#fff" stroke-width="3"/>
+        <line x1="150" y1="-8" x2="150" y2="-42" stroke="var(--deep)" stroke-width="2.5"/>
+        <polygon points="150,-42 184,-31 150,-20" fill="var(--g)"/>
+        <rect x="100" y="108" width="100" height="26" rx="6" fill="var(--deep)"/>
+        <text x="150" y="127" text-anchor="middle" font-family="Poppins, system-ui, sans-serif" font-size="14" font-weight="700" letter-spacing="3" fill="#fff">PAUD</text>
+        <g fill="#bfe3f2" stroke="#fff" stroke-width="3"><rect x="44" y="150" width="30" height="42" rx="6"/><rect x="84" y="150" width="30" height="42" rx="6"/><rect x="186" y="150" width="30" height="42" rx="6"/><rect x="226" y="150" width="30" height="42" rx="6"/></g>
+        <path d="M128 230v-48a22 22 0 0 1 44 0v48z" fill="var(--deep)"/>
+        <rect x="116" y="228" width="68" height="9" rx="3" fill="#e8dcc0"/>
+      </g>
+      <g fill="var(--tree)"><rect x="414" y="318" width="12" height="66" fill="#8a6a45"/><circle cx="420" cy="300" r="36"/><circle cx="394" cy="318" r="24"/><circle cx="446" cy="320" r="24"/>
+        <rect x="809" y="318" width="12" height="66" fill="#8a6a45"/><circle cx="815" cy="300" r="36"/><circle cx="789" cy="318" r="24"/><circle cx="841" cy="320" r="24"/></g>
+      <path d="M0 404c140-22 300 8 460-6s300 12 440 0V460H0z" fill="var(--h3)"/>
+      <path d="M604 384h34c4 36 66 54 150 76H480c92-22 120-40 124-76z" fill="#efe3bd"/>
+      ${bunga}
+      <g>
+        <rect x="318" y="398" width="9" height="24" rx="3" fill="#2f5d3a"/><rect x="330" y="398" width="9" height="24" rx="3" fill="#2f5d3a"/>
+        <rect x="314" y="364" width="30" height="40" rx="11" fill="#fff"/>
+        <circle cx="329" cy="346" r="17" fill="#f1c9a1"/>
+        <path d="M312 344a17 17 0 0 1 34 0q-17-9-34 0z" fill="#2b2b2b"/>
+        <rect x="362" y="400" width="9" height="22" rx="3" fill="#f1c9a1"/><rect x="374" y="400" width="9" height="22" rx="3" fill="#f1c9a1"/>
+        <path d="M356 368h30l9 36h-48z" fill="#f2a65a"/>
+        <circle cx="371" cy="350" r="16" fill="#f1c9a1"/>
+        <path d="M354 350a17 17 0 0 1 34 0q-17-9-34 0z" fill="#3b2a22"/>
+        <circle cx="357" cy="338" r="6" fill="#3b2a22"/><circle cx="385" cy="338" r="6" fill="#3b2a22"/>
+        <path d="M344 380l12 2" stroke="#f1c9a1" stroke-width="6" stroke-linecap="round"/>
+        <path d="M333 300l22-8 22 8v26l-22-8-22 8z" fill="#fff" stroke="var(--a)" stroke-width="2" stroke-linejoin="round"/>
+        <line x1="355" y1="292" x2="355" y2="318" stroke="var(--a)" stroke-width="2"/>
+      </g>
+    </svg>`;
+  }
+
+  function renderAuth(portal = 'admin', mode = 'masuk') {
+    let cur = portal === 'guru' ? 'guru' : 'admin';
+    state.pilih = cur;
+    const per = defaultPeriode();
+    const y0 = Number(per.ta.slice(0, 4));
+    const taOpsi = [y0 - 1, y0, y0 + 1].map((y) => `${y}/${y + 1}`);
+    const daftar = mode === 'daftar';
+
+    $app.innerHTML = `
+      <div class="login" id="login" data-portal="${cur}">
+        <section class="hero">
+          <div class="hero-brand">${logoSvg()}<div><b>Rapor Digital</b><span>PAUD &middot; Kurikulum Merdeka</span></div></div>
+          <div class="hero-text fade" id="heroText">
+            <span class="hero-tag" id="heroTag"></span>
+            <h1 id="heroH1"></h1>
+            <p id="heroSub"></p>
+          </div>
+          <div class="chips fade" id="chips"></div>
+          ${ilustrasi()}
+        </section>
+
+        <section class="panel">
+          <div class="login-card">
+            <div class="role-switch" id="roleSwitch" data-on="${cur}" role="tablist" aria-label="Pilih jenis akun">
+              <span class="thumb"></span>
+              <button type="button" role="tab" data-pt="admin">${svgi('shield', 18)}<span>Admin</span></button>
+              <button type="button" role="tab" data-pt="guru">${svgi('teacher', 18)}<span>Guru</span></button>
+            </div>
+            <p class="eyebrow">Rapor Digital PAUD</p>
+            <h2 id="cardTitle"></h2>
+            <p class="lead" id="cardLead"></p>
+
+            <form id="fAuth" autocomplete="on">
+              ${daftar ? `<div class="ig"><span class="ig-ic">${svgi('user', 18)}</span><input name="nama" placeholder="Nama lengkap" required autocomplete="name"></div>` : ''}
+              <div class="ig"><span class="ig-ic">${svgi('user', 18)}</span><input name="username" id="inUser" placeholder="${DEMO ? 'Username' : 'Email'}" required autocomplete="username" ${DEMO ? '' : 'type="email"'}></div>
+              <div class="ig"><span class="ig-ic">${svgi('lock', 18)}</span><input name="password" id="inPass" type="password" placeholder="Password" required ${daftar ? 'minlength="8"' : ''} autocomplete="${daftar ? 'new-password' : 'current-password'}"><button type="button" class="ig-eye" id="btnEye" aria-label="Tampilkan password">${svgi('eye', 18)}</button></div>
+              <div class="ig"><span class="ig-ic">${svgi('calendar', 18)}</span><select name="ta" aria-label="Tahun ajaran">${taOpsi.map((t) => `<option value="${t}" ${t === per.ta ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+              <div class="ig"><span class="ig-ic">${svgi('clock', 18)}</span><select name="sem" aria-label="Semester"><option value="1" ${per.sem === 1 ? 'selected' : ''}>Ganjil</option><option value="2" ${per.sem === 2 ? 'selected' : ''}>Genap</option></select></div>
+              <div class="login-act">
+                <button class="btn-login" id="btnMasuk">${daftar ? 'Daftar' : 'Login'}</button>
+                <button type="button" class="link-btn" id="btnLupa">Lupa password?</button>
+              </div>
+            </form>
+
+            ${DEMO ? `<div class="demo" id="demoBox"><span>Mode demo &middot; akun contoh: <code id="demoCred"></code></span><button type="button" class="link-btn" id="btnIsi">Isi otomatis</button></div>` : ''}
+            ${!DEMO ? `<p class="switch-mode">${daftar ? 'Sudah punya akun?' : 'Belum punya akun?'} <button type="button" class="link-btn" id="btnMode">${daftar ? 'Masuk' : 'Daftar'}</button></p>
+            ${daftar ? '<p class="note">Akun baru perlu diaktifkan admin sekolah. Pendaftar pertama otomatis menjadi admin.</p>' : ''}` : ''}
+            <p class="note">Gunakan akun yang diberikan sekolah. Data anak bersifat rahasia dan hanya untuk keperluan pendidikan.</p>
+            <p class="ver">Rapor Digital PAUD &middot; Fase Fondasi${DEMO ? ' &middot; Versi Demo' : ''}</p>
+          </div>
+        </section>
+      </div>`;
+
+    const q = (id) => document.getElementById(id);
+    const root = q('login');
+    const refade = (...els) => els.forEach((el) => { el.classList.remove('fade'); void el.offsetWidth; el.classList.add('fade'); });
+
+    function paint(first) {
+      const P = PORTAL[cur];
+      state.pilih = cur;
+      root.dataset.portal = cur;
+      q('roleSwitch').dataset.on = cur;
+      root.querySelectorAll('[data-pt]').forEach((b) => {
+        const on = b.dataset.pt === cur;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      q('heroTag').textContent = P.tag;
+      q('heroH1').innerHTML = `${P.h1a}<br><em>${P.h1b}</em>`;
+      q('heroSub').textContent = P.sub;
+      q('chips').innerHTML = P.chips
+        .map(([ic, t, d]) => `<div class="chip"><span class="chip-ic">${svgi(ic, 24)}</span><b>${t}</b><small>${d}</small></div>`)
+        .join('');
+      q('cardTitle').innerHTML = `Masuk sebagai <b>${P.nama}</b>`;
+      q('cardLead').textContent = P.lead;
+      if (!daftar) q('btnMasuk').textContent = 'Login';
+      if (DEMO) q('demoCred').textContent = `${P.user} / demo`;
+      if (!first) refade(q('heroText'), q('chips'));
+    }
+    paint(true);
+
+    root.querySelectorAll('[data-pt]').forEach((b) => {
+      b.onclick = () => { cur = b.dataset.pt; paint(false); };
+    });
+    q('btnEye').onclick = () => {
+      const p = q('inPass');
+      const show = p.type === 'password';
+      p.type = show ? 'text' : 'password';
+      q('btnEye').innerHTML = svgi(show ? 'eyeoff' : 'eye', 18);
+      q('btnEye').setAttribute('aria-label', show ? 'Sembunyikan password' : 'Tampilkan password');
+    };
+    q('btnLupa').onclick = () => toast(PORTAL[cur].lupa);
+    if (DEMO) {
+      q('btnIsi').onclick = () => {
+        q('inUser').value = PORTAL[cur].user;
+        q('inPass').value = 'demo';
+        q('btnMasuk').focus();
+      };
+    } else {
+      q('btnMode').onclick = () => renderAuth(cur, daftar ? 'masuk' : 'daftar');
+    }
+
+    const form = q('fAuth');
     form.onsubmit = async (e) => {
       e.preventDefault();
       const f = Object.fromEntries(new FormData(form));
+      state.portal = cur;
+      state.loginPeriode = { ta: f.ta, sem: Number(f.sem) };
       setBusy(form, true);
       try {
-        if (mode === 'daftar') {
+        if (daftar) {
           const { data, error } = await sb.auth.signUp({
-            email: f.email.trim(),
+            email: f.username.trim(),
             password: f.password,
             options: { data: { nama: f.nama.trim() } },
           });
           if (error) throw error;
           if (!data.session) toast('Pendaftaran berhasil. Cek email untuk konfirmasi, lalu masuk.', 'ok');
         } else {
-          const { error } = await sb.auth.signInWithPassword({ email: f.email.trim(), password: f.password });
+          const { error } = await sb.auth.signInWithPassword({ email: f.username.trim(), password: f.password });
           if (error) throw error;
         }
       } catch (err) {
+        state.portal = null;
+        state.loginPeriode = null;
         toast(errMsg(err), 'err');
       } finally {
         setBusy(form, false);
@@ -370,7 +576,24 @@
     const guru = await getGuruMap();
     if (my !== state.token) return;
 
+    const totalSiswa = kelas.reduce((n, k) => n + (k.siswa && k.siswa[0] ? k.siswa[0].count : 0), 0);
+    const per = state.periode || defaultPeriode();
+
     renderShell(html`
+      <section class="welcome">
+        <div>
+          <span class="welcome-tag">${isAdmin() ? 'Panel Administrator' : 'Ruang Guru'}</span>
+          <h2>Selamat datang, ${state.profile.nama || state.user.email}</h2>
+          <p>${isAdmin()
+            ? 'Anda melihat seluruh kelas dan dapat mengelola data sekolah, kelas, serta akun guru.'
+            : 'Anda hanya melihat kelas yang Anda ampu. Pilih kelas untuk mengisi rapor dan buku induk anak.'}</p>
+        </div>
+        <div class="stats">
+          <div class="stat"><b>${kelas.length}</b><span>${isAdmin() ? 'Kelas' : 'Kelas saya'}</span></div>
+          <div class="stat"><b>${totalSiswa}</b><span>Siswa</span></div>
+          <div class="stat"><b>${per.sem === 1 ? 'Ganjil' : 'Genap'}</b><span>${per.ta}</span></div>
+        </div>
+      </section>
       <div class="page-head"><h2>Kelas</h2>
         ${isAdmin() ? html`<a class="btn" href="#/admin">Kelola kelas</a>` : ''}
       </div>
@@ -574,12 +797,9 @@
       <div class="crumbs no-print"><a href="#/kelas/${kelasId}">${kelasNama}</a> &rsaquo; ${baru ? 'Siswa baru' : siswa.nama}</div>
       <section class="buku">
         <div class="buku-banner"><h2>BUKU INDUK ANAK</h2></div>
-        <div class="buku-tabs">
-          ${tabLink('DATA PER TAHUN', baru ? '' : `#/siswa/${siswa.id}/tahun`, tab === 'tahun')}
-          ${tabLink('BIODATA ANAK', baru ? '' : `#/siswa/${siswa.id}`, tab === 'biodata')}
-        </div>
         <div class="buku-body" id="bukuBody"></div>
       </section>`);
+    document.body.classList.add('bg-buku');
     const body = document.getElementById('bukuBody');
 
     // ------------------------------------------------------------

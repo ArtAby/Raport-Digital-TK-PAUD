@@ -20,7 +20,7 @@ Hasil akhirnya: satu alamat seperti `https://namaakun.github.io/rapor-paud-demo/
 
 ## Yang perlu diketahui saat mendemokan
 
-- **Tidak perlu login sungguhan.** Ada dua tombol masuk: Admin (melihat semua kelas dan menu Admin) dan Guru (hanya melihat kelasnya sendiri).
+- **Halaman login dibedakan sejak awal.** Pilih tab **Admin** atau **Guru** di kartu login (tampilan dan warna berubah). Akun demo: `admin` / `demo` dan `guru` / `demo`, atau klik **Isi otomatis**. Admin melihat semua kelas dan menu Admin; Guru hanya melihat kelasnya sendiri. Akun Admin tidak bisa masuk lewat tab Guru, begitu juga sebaliknya. Tahun ajaran dan semester yang dipilih saat login menjadi periode awal.
 - **Buku Induk Anak:** klik nama siswa di daftar kelas untuk membuka halaman biodata (data anak, orang tua, tempat tinggal, foto) dengan tombol Tambah, Edit, Hapus, dan Tutup. Tab *Data per tahun* menampilkan riwayat rapor. Coba Edit lalu Pilih foto untuk menunjukkan unggah foto.
 - **Data contoh fiktif** (10 siswa, 2 kelas, 2 rapor untuk Alya). Rapor Alya semester ini sudah terisi lengkap, cocok untuk ditunjukkan di layar *Cetak*.
 - **Data tersimpan di peramban masing-masing.** Perubahan satu guru tidak terlihat guru lain, dan hilang jika data situs dibersihkan. Tombol **Reset data demo** di bagian atas mengembalikan ke kondisi awal.

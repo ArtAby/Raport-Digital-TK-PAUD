@@ -403,9 +403,13 @@
         listeners.push(cb);
         return { data: { subscription: { unsubscribe() {} } } };
       },
-      async signInWithPassword({ email }) {
-        const p = loadDB().profiles.find((x) => x.email === email);
-        if (!p) return { data: null, error: { message: 'Akun tidak ditemukan. Gunakan tombol masuk demo.' } };
+      async signInWithPassword({ email, password }) {
+        const id = String(email || '').trim().toLowerCase();
+        const mail = id.includes('@') ? id : id + '@demo.sch';
+        const p = loadDB().profiles.find((x) => x.email === mail);
+        if (!p || password !== 'demo') {
+          return { data: null, error: { message: 'Username atau password salah. Pada mode demo gunakan admin / demo atau guru / demo.' } };
+        }
         setSessionId(p.id);
         notify('SIGNED_IN');
         return { data: { session: sessionOf(p) }, error: null };
